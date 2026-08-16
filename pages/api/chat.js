@@ -116,7 +116,10 @@ export default async function handler(req, res) {
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      parsed = { reply: raw || "Something went wrong parsing that — try rephrasing?", memory_ops: [] };
+      parsed = {
+        reply: "Something went wrong parsing that — try rephrasing?",
+        memory_ops: [],
+      };
     }
 
     return res.status(200).json(parsed);
