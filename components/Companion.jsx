@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Send, Loader2, Sparkles, Menu, X, Check, Circle, Clock, Trash2, BookOpen } from "lucide-react";
+import { Send, Loader2, Sparkles, Menu, X, Check, Circle, Clock, Trash2, BookOpen, MessageSquare, LayoutGrid } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import Board from "./Board";
+import { todayISO, daysUntil } from "../lib/dates";
+import { fetchMemory, postMemoryOps } from "../lib/memoryApi";
 
 const T = {
   bg: "#EDEAE2", panel: "#F8F6F1", panelAlt: "#F1EEE6", ink: "#21281F",
@@ -10,14 +13,6 @@ const T = {
 const FONT_DISPLAY = "'Fraunces', Georgia, serif";
 const FONT_BODY = "'Inter', system-ui, sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const daysUntil = (d) => {
-  if (!d) return null;
-  const dt = new Date(d + "T00:00:00");
-  const now = new Date(); now.setHours(0, 0, 0, 0);
-  return Math.round((dt - now) / 86400000);
-};
 
 function loadLocal(key, fallback) {
   if (typeof window === "undefined") return fallback;
@@ -81,28 +76,8 @@ function toMarkdown(text) {
     .join("\n");
 }
 
-async function fetchMemory() {
-  const res = await fetch("/api/memory");
-  if (!res.ok) throw new Error("Failed to load saved tasks/notes");
-  const data = await res.json();
-  return Array.isArray(data.items) ? data.items : [];
-}
-
-async function postMemoryOps(ops) {
-  const res = await fetch("/api/memory", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ops }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || data.error || "Failed to save");
-  return {
-    items: Array.isArray(data.items) ? data.items : [],
-    added: Array.isArray(data.added) ? data.added : [],
-  };
-}
-
 export default function Companion() {
+  const [tab, setTab] = useState("chat"); // "chat" | "board"
   const [memory, setMemory] = useState([]);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -162,18 +137,31 @@ export default function Companion() {
   const notes = memory.filter((m) => m.type === "note").slice(-6).reverse();
 
   return (
-    <div style={{ fontFamily: FONT_BODY, background: T.bg, color: T.ink, height: "100vh", display: "flex", overflow: "hidden" }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${T.line}`, background: T.panel }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Sparkles size={16} color={T.growth} />
-            <span style={{ fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 600 }}>Companion</span>
-          </div>
+    <div style={{ fontFamily: FONT_BODY, background: T.bg, color: T.ink, height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${T.line}`, background: T.panel, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={16} color={T.growth} />
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 600 }}>Companion</span>
+        </div>
+        <div style={{ display: "flex", gap: 3, background: T.panelAlt, padding: 3, borderRadius: 10, border: `1px solid ${T.line}` }}>
+          <TabButton active={tab === "chat"} onClick={() => setTab("chat")} icon={MessageSquare} label="Chat" />
+          <TabButton active={tab === "board"} onClick={() => setTab("board")} icon={LayoutGrid} label="Board" />
+        </div>
+        {tab === "chat" ? (
           <button onClick={() => setSidebarOpen((s) => !s)} style={{ background: "none", border: "none", cursor: "pointer", color: T.inkFaint, display: "flex" }}>
             <Menu size={18} />
           </button>
-        </div>
+        ) : (
+          <div style={{ width: 18 }} />
+        )}
+      </div>
 
+      <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
+      {tab === "board" ? (
+        <Board memory={memory} setMemory={setMemory} />
+      ) : (
+      <>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
           {!ready ? (
             <div style={{ color: T.inkFaint, fontSize: 13 }}>Loading…</div>
@@ -298,6 +286,9 @@ export default function Companion() {
           </div>
         </div>
       )}
+      </>
+      )}
+      </div>
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
         .spin { animation: spin 1s linear infinite; }
@@ -306,6 +297,24 @@ export default function Companion() {
         html, body { margin: 0; padding: 0; }
       `}</style>
     </div>
+  );
+}
+
+function TabButton({ active, onClick, icon: Icon, label }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer",
+        borderRadius: 7, padding: "6px 12px", fontSize: 12.5, fontFamily: FONT_BODY, fontWeight: 500,
+        background: active ? "#fff" : "transparent",
+        color: active ? T.ink : T.inkFaint,
+        boxShadow: active ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+      }}
+    >
+      <Icon size={13} />
+      {label}
+    </button>
   );
 }
 

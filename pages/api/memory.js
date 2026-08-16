@@ -29,6 +29,8 @@ async function ensureTable(sql) {
       created_at TEXT
     )
   `;
+  // Added after the initial release — safe to run every time.
+  await sql`ALTER TABLE memory_items ADD COLUMN IF NOT EXISTS completed_at TEXT`;
 }
 
 function rowToItem(row) {
@@ -42,6 +44,7 @@ function rowToItem(row) {
     mood: row.mood ?? undefined,
     status: row.status,
     createdAt: row.created_at,
+    completedAt: row.completed_at ?? null,
   };
 }
 
@@ -49,18 +52,20 @@ async function applyOp(sql, op) {
   if (!op || typeof op !== "object") return null;
 
   if (op.op === "add_task") {
+    const validStatus = ["open", "in_progress", "done"].includes(op.status) ? op.status : "open";
     const item = {
       id: randomUUID(),
       type: "task",
       title: op.title,
       deadline: op.deadline || null,
       priority: op.priority || "medium",
-      status: "open",
+      status: validStatus,
       createdAt: todayISO(),
+      completedAt: validStatus === "done" ? todayISO() : null,
     };
     await sql`
-      INSERT INTO memory_items (id, type, title, deadline, priority, status, created_at)
-      VALUES (${item.id}, ${item.type}, ${item.title}, ${item.deadline}, ${item.priority}, ${item.status}, ${item.createdAt})
+      INSERT INTO memory_items (id, type, title, deadline, priority, status, created_at, completed_at)
+      VALUES (${item.id}, ${item.type}, ${item.title}, ${item.deadline}, ${item.priority}, ${item.status}, ${item.createdAt}, ${item.completedAt})
     `;
     return item;
   }
@@ -83,7 +88,7 @@ async function applyOp(sql, op) {
   }
 
   if (op.op === "complete") {
-    await sql`UPDATE memory_items SET status = 'done' WHERE id = ${op.id}`;
+    await sql`UPDATE memory_items SET status = 'done', completed_at = ${todayISO()} WHERE id = ${op.id}`;
     return null;
   }
 
@@ -92,7 +97,11 @@ async function applyOp(sql, op) {
     if ("title" in f) await sql`UPDATE memory_items SET title = ${f.title} WHERE id = ${op.id}`;
     if ("deadline" in f) await sql`UPDATE memory_items SET deadline = ${f.deadline} WHERE id = ${op.id}`;
     if ("priority" in f) await sql`UPDATE memory_items SET priority = ${f.priority} WHERE id = ${op.id}`;
-    if ("status" in f) await sql`UPDATE memory_items SET status = ${f.status} WHERE id = ${op.id}`;
+    if ("status" in f) {
+      const validStatus = ["open", "in_progress", "done"].includes(f.status) ? f.status : "open";
+      const completedAt = validStatus === "done" ? todayISO() : null;
+      await sql`UPDATE memory_items SET status = ${validStatus}, completed_at = ${completedAt} WHERE id = ${op.id}`;
+    }
     if ("detail" in f) await sql`UPDATE memory_items SET detail = ${f.detail} WHERE id = ${op.id}`;
     if ("mood" in f) await sql`UPDATE memory_items SET mood = ${f.mood} WHERE id = ${op.id}`;
     return null;
