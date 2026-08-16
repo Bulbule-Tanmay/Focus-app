@@ -61,14 +61,19 @@ memory_ops vocabulary (omit ops that don't apply, empty array if nothing to save
 Rules: only reference "id" values that appear in CURRENT MEMORY — never invent ids. Extract silently, don't ask for confirmation on every save. When asked "what should I do" / "what's next", answer using CURRENT MEMORY and the background context — weigh deadline urgency, priority, and only recent mood. Never fabricate tasks or deadlines. Keep "reply" under 150 words unless more detail is clearly wanted.`;
 }
 
+const GEMINI_MODEL = "gemini-2.5-flash-lite";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "Missing GEMINI_API_KEY environment variable on the server." });
+  const placeholderKey = apiKey && apiKey.toLowerCase().includes("your_gemini_api_key_here");
+  if (!apiKey || placeholderKey) {
+    return res.status(500).json({
+      error: "Missing or invalid GEMINI_API_KEY environment variable on the server. Generate a fresh key at https://aistudio.google.com and add it to .env.local or your deployment environment.",
+    });
   }
 
   try {
@@ -79,7 +84,7 @@ export default async function handler(req, res) {
       .join("\n");
 
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,7 +100,13 @@ export default async function handler(req, res) {
 
     if (!geminiRes.ok) {
       console.error("Gemini API error:", data);
-      return res.status(502).json({ error: "Gemini API error", details: data });
+      const reason = data?.error?.details?.[0]?.reason;
+      const message = data?.error?.message || "Unknown upstream Gemini error.";
+      return res.status(502).json({
+        error: "Gemini API error",
+        details: data,
+        message: reason ? `${reason}: ${message}` : message,
+      });
     }
 
     const raw = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("\n") || "";

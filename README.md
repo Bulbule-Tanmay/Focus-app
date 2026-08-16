@@ -25,6 +25,10 @@ the app to work.
 Go to [aistudio.google.com](https://aistudio.google.com), sign in, and
 generate an API key. No credit card required.
 
+If you see "Gemini API error" or "API key not valid", the current key is
+expired, revoked, or pasted incorrectly. Create a new key and paste it into
+your local `.env.local` file or the Vercel project environment variables.
+
 ## 2. Run it locally (optional, to test first)
 
 ```bash

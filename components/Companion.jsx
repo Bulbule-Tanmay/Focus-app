@@ -44,7 +44,7 @@ async function callChatApi(memory, conversation) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || "API error");
+    throw new Error(err.message || err.error || "API error");
   }
   return res.json();
 }
