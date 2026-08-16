@@ -55,14 +55,14 @@ async function callChatApi(memory, conversation) {
         try {
           parsed = JSON.parse(parsed);
         } catch {
-          return { reply: parsed, memory_ops: [] };
+          return fallback;
         }
       }
       if (!parsed || typeof parsed !== "object") return fallback;
       const body = parsed.data && typeof parsed.data === "object" ? parsed.data : parsed;
       const reply = typeof body.reply === "string" ? body.reply : fallback.reply;
       const memoryOps = Array.isArray(body.memory_ops) ? body.memory_ops : [];
-      return { ...body, reply, memory_ops: memoryOps };
+      return { reply, memory_ops: memoryOps };
     } catch {
       return fallback;
     }
