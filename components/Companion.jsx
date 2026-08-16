@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Send, Loader2, Sparkles, Menu, X, Check, Circle, Clock, Trash2, BookOpen } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 const T = {
   bg: "#EDEAE2", panel: "#F8F6F1", panelAlt: "#F1EEE6", ink: "#21281F",
@@ -42,11 +43,43 @@ async function callChatApi(memory, conversation) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ memory, conversation }),
   });
+  const rawText = await res.text();
+  const fallback = {
+    reply: "I couldn't read that response clearly — please try again.",
+    memory_ops: [],
+  };
+  const parsePayload = () => {
+    try {
+      let parsed = JSON.parse(rawText);
+      if (typeof parsed === "string") {
+        try {
+          parsed = JSON.parse(parsed);
+        } catch {
+          return { reply: parsed, memory_ops: [] };
+        }
+      }
+      if (!parsed || typeof parsed !== "object") return fallback;
+      const body = parsed.data && typeof parsed.data === "object" ? parsed.data : parsed;
+      const reply = typeof body.reply === "string" ? body.reply : fallback.reply;
+      const memoryOps = Array.isArray(body.memory_ops) ? body.memory_ops : [];
+      return { ...body, reply, memory_ops: memoryOps };
+    } catch {
+      return fallback;
+    }
+  };
+  const parsed = parsePayload();
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || err.error || "API error");
+    throw new Error(parsed.message || parsed.error || "API error");
   }
-  return res.json();
+  return parsed;
+}
+
+function toMarkdown(text) {
+  if (typeof text !== "string") return "";
+  return text
+    .split("\n")
+    .map((line) => line.replace(/^(\s*)•\s+/, "$1- "))
+    .join("\n");
 }
 
 function applyOps(memory, ops) {
@@ -161,7 +194,21 @@ export default function Companion() {
                     color: m.role === "user" ? "#F8F6F1" : T.ink,
                     fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap",
                   }}>
-                    {m.text}
+                    {m.role === "assistant" ? (
+                      <div className="assistant-markdown">
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,
+                            ul: ({ children }) => <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>{children}</ul>,
+                            li: ({ children }) => <li style={{ margin: "2px 0" }}>{children}</li>,
+                          }}
+                        >
+                          {toMarkdown(m.text)}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      m.text
+                    )}
                   </div>
                   {m.saved && m.saved.length > 0 && (
                     <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
