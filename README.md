@@ -40,14 +40,33 @@ npm run dev
 
 Open http://localhost:3000
 
-## 3. Deploy to Vercel
+## 3. Set up a database (for tasks/notes storage)
+
+Tasks and notes are stored in a real Postgres database (via Neon), not
+`localStorage`, so they persist across deploys, devices, and browsers.
+
+1. In your Vercel project, go to **Storage → Create Database → Postgres**
+   (this provisions a free Neon Postgres database and connects it to your
+   project automatically).
+2. Vercel will add a `DATABASE_URL` environment variable to your project for
+   you — no manual copy/paste needed.
+3. Redeploy (or it'll pick it up on the next deploy).
+
+That's it — `pages/api/memory.js` creates the `memory_items` table itself on
+first request, so there's no separate migration step.
+
+**Running locally:** after creating the database on Vercel, run
+`vercel env pull .env.local` to pull `DATABASE_URL` down locally (this
+merges with your existing `.env.local`, so your `GEMINI_API_KEY` stays put).
+
+## 4. Deploy to Vercel
 
 **Option A — via GitHub:**
 1. Push this folder to a new GitHub repo (private, per the warning above).
 2. Go to [vercel.com/new](https://vercel.com/new), import the repo.
 3. In the project's Environment Variables, add:
    - `GEMINI_API_KEY` = your key
-4. Deploy.
+4. Deploy, then follow step 3 above to attach a database.
 
 **Option B — via Vercel CLI (no GitHub needed):**
 ```bash
@@ -63,12 +82,14 @@ vercel --prod
   request so it already knows your situation.
 - `pages/api/chat.js` — serverless function; the only place your API key is
   used, never exposed to the browser.
+- `pages/api/memory.js` — serverless function that reads/writes the
+  `memory_items` table in Postgres (via `@neondatabase/serverless`). This is
+  the single store for both tasks and notes.
 - `components/Companion.jsx` — the chat UI. Talk normally; the AI extracts
-  tasks/deadlines/notes into memory automatically.
-- Memory is currently stored in your browser's `localStorage` — private to
-  your device, no database needed to get started. If you want it to sync
-  across devices, swap this for a real database (Supabase and Vercel KV both
-  have free tiers) — ask if you want that wired up.
+  tasks/deadlines/notes, which get saved to the database through
+  `pages/api/memory.js`.
+- Chat history (just the message log, not tasks/notes) still lives in
+  `localStorage` since it's low-stakes and doesn't need to sync.
 
 ## Editing your context
 

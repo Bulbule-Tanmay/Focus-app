@@ -11,7 +11,6 @@ const FONT_DISPLAY = "'Fraunces', Georgia, serif";
 const FONT_BODY = "'Inter', system-ui, sans-serif";
 const FONT_MONO = "'IBM Plex Mono', monospace";
 
-const uid = () => Math.random().toString(36).slice(2, 10);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const daysUntil = (d) => {
   if (!d) return null;
@@ -82,25 +81,25 @@ function toMarkdown(text) {
     .join("\n");
 }
 
-function applyOps(memory, ops) {
-  let next = [...memory];
-  const added = [];
-  for (const op of ops || []) {
-    if (op.op === "add_task") {
-      const item = { id: uid(), type: "task", title: op.title, deadline: op.deadline || null, priority: op.priority || "medium", status: "open", createdAt: todayISO() };
-      next.push(item); added.push(item);
-    } else if (op.op === "add_note") {
-      const item = { id: uid(), type: "note", title: op.title, detail: op.detail || "", mood: op.mood || null, status: "logged", createdAt: todayISO() };
-      next.push(item); added.push(item);
-    } else if (op.op === "complete") {
-      next = next.map((m) => (m.id === op.id ? { ...m, status: "done" } : m));
-    } else if (op.op === "update") {
-      next = next.map((m) => (m.id === op.id ? { ...m, ...op.fields } : m));
-    } else if (op.op === "delete") {
-      next = next.filter((m) => m.id !== op.id);
-    }
-  }
-  return { next, added };
+async function fetchMemory() {
+  const res = await fetch("/api/memory");
+  if (!res.ok) throw new Error("Failed to load saved tasks/notes");
+  const data = await res.json();
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+async function postMemoryOps(ops) {
+  const res = await fetch("/api/memory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ops }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || data.error || "Failed to save");
+  return {
+    items: Array.isArray(data.items) ? data.items : [],
+    added: Array.isArray(data.added) ? data.added : [],
+  };
 }
 
 export default function Companion() {
@@ -114,9 +113,11 @@ export default function Companion() {
   const endRef = useRef(null);
 
   useEffect(() => {
-    setMemory(loadLocal("memory-items", []));
     setMessages(loadLocal("chat-log", []));
-    setReady(true);
+    fetchMemory()
+      .then((items) => setMemory(items))
+      .catch((e) => setErrorMsg(e.message || "Could not load saved tasks/notes."))
+      .finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -134,9 +135,8 @@ export default function Companion() {
     setLoading(true);
     try {
       const result = await callChatApi(memory, convo);
-      const { next, added } = applyOps(memory, result.memory_ops);
-      setMemory(next);
-      saveLocal("memory-items", next);
+      const { items, added } = await postMemoryOps(result.memory_ops);
+      setMemory(items);
       const assistantMsg = { role: "assistant", text: result.reply, saved: added };
       const finalConvo = [...convo, assistantMsg];
       setMessages(finalConvo);
@@ -312,15 +312,14 @@ export default function Companion() {
 function MemTask({ item, setMemory, memory }) {
   const du = daysUntil(item.deadline);
   const urgent = du !== null && du <= 2;
-  const toggle = () => {
-    const next = memory.map((m) => (m.id === item.id ? { ...m, status: m.status === "done" ? "open" : "done" } : m));
-    setMemory(next);
-    saveLocal("memory-items", next);
+  const toggle = async () => {
+    const fields = { status: item.status === "done" ? "open" : "done" };
+    const { items } = await postMemoryOps([{ op: "update", id: item.id, fields }]);
+    setMemory(items);
   };
-  const remove = () => {
-    const next = memory.filter((m) => m.id !== item.id);
-    setMemory(next);
-    saveLocal("memory-items", next);
+  const remove = async () => {
+    const { items } = await postMemoryOps([{ op: "delete", id: item.id }]);
+    setMemory(items);
   };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 0", fontSize: 12.5 }}>
